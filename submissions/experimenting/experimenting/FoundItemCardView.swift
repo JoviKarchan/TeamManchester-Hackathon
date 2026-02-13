@@ -4,6 +4,7 @@ import SwiftUI
 struct FoundItemCardView: View {
     let match: LensMatch
     var onTap: (() -> Void)?
+    @State private var convertedPrice: String?
 
     var body: some View {
         Button(action: { onTap?() }) {
@@ -18,7 +19,7 @@ struct FoundItemCardView: View {
                     Text(match.source)
                         .font(.system(size: 14))
                         .foregroundColor(Color("All").opacity(0.7))
-                    if let price = match.priceLabel {
+                    if let price = convertedPrice ?? match.priceLabel {
                         Text(price)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color("All"))
@@ -37,6 +38,11 @@ struct FoundItemCardView: View {
             )
         }
         .buttonStyle(.plain)
+        .task {
+            if let priceLabel = match.priceLabel {
+                convertedPrice = await CurrencyConverter.shared.convertToINR(priceString: priceLabel)
+            }
+        }
     }
 
     private var thumbnailView: some View {

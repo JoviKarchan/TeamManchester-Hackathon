@@ -70,7 +70,6 @@ struct HomeView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    //gonan delete chat
                     ForEach(Array(historyStore.items.prefix(2)).enumerated(), id: \.element.id) { index, item in
                         HistoryCardView(
                             imageURL: item.imageURL,
@@ -119,14 +118,38 @@ struct HomeView: View {
         searchMatches = []
         searchableImage = SearchableImage(image: image)
 
+        if #available(iOS 16.1, *) {
+            let searchId = UUID().uuidString
+            LiveActivityManager.shared.startSearch(image: image, searchId: searchId)
+        }
+
         Task {
             do {
+                if #available(iOS 16.1, *) {
+                    LiveActivityManager.shared.updateSearch(progress: 0.3)
+                }
+                
                 let url = try await UploadService.uploadImage(image)
+                
+                if #available(iOS 16.1, *) {
+                    LiveActivityManager.shared.updateSearch(progress: 0.6)
+                }
+                
                 let matches = try await SerpApiClient.searchWithImageURLAllMatches(url)
+                
+                if #available(iOS 16.1, *) {
+                    LiveActivityManager.shared.updateSearch(progress: 0.9)
+                }
+                
                 await MainActor.run {
                     let matchesWithPrices = matches.filter { $0.priceLabel != nil && !$0.priceLabel!.isEmpty }
                     let title = matchesWithPrices.first?.title ?? matches.first?.title ?? "Image search"
                     historyStore.add(title: title, date: Date(), imageURL: url)
+                    
+                    if #available(iOS 16.1, *) {
+                        LiveActivityManager.shared.completeSearch(found: !matchesWithPrices.isEmpty)
+                    }
+                    
                     if matchesWithPrices.isEmpty {
                         searchState = .noMatch
                     } else {
@@ -136,6 +159,9 @@ struct HomeView: View {
                 }
             } catch {
                 await MainActor.run {
+                    if #available(iOS 16.1, *) {
+                        LiveActivityManager.shared.completeSearch(found: false)
+                    }
                     searchState = .noMatch
                 }
             }

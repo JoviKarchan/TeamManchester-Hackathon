@@ -3,6 +3,7 @@ import AVKit
 
 struct VideoLoaderView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var authManager: AuthManager
 
     @State private var player: AVPlayer?
     @State private var playerItem: AVPlayerItem?
@@ -11,7 +12,7 @@ struct VideoLoaderView: View {
     var body: some View {
         Group {
             if showContentView {
-                ContentView()
+                ContentView(authManager: authManager)
             } else {
                 ZStack {
                     Color("intro")

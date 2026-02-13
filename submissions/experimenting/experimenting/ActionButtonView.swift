@@ -56,7 +56,7 @@ struct ActionButtonsView: View {
                     .padding(20)
                     .background(
                         Circle()
-                            .fill(Color(.systemGray5)) // w neutrality
+                            .fill(Color(.systemGray5))
                     )
 
                 Text(title)

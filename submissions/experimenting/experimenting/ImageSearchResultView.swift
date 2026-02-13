@@ -35,6 +35,7 @@ struct ImageSearchResultView: View {
     var onDismiss: (() -> Void)?
     
     @State private var priceSortOption: PriceSortOption = .none
+    @State private var sortedMatches: [LensMatch] = []
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -61,6 +62,16 @@ struct ImageSearchResultView: View {
                     foundContent(matches: matches)
                 }
                 .ignoresSafeArea(edges: .top)
+                .onAppear {
+                    Task {
+                        sortedMatches = await sortMatches(matches, by: priceSortOption)
+                    }
+                }
+                .onChange(of: priceSortOption) { newOption in
+                    Task {
+                        sortedMatches = await sortMatches(matches, by: newOption)
+                    }
+                }
             }
 
             backButton
@@ -123,7 +134,7 @@ struct ImageSearchResultView: View {
     }
 
     private func foundContent(matches: [LensMatch]) -> some View {
-        let sortedMatches = sortMatches(matches, by: priceSortOption)
+        let displayMatches = sortedMatches.isEmpty ? matches : sortedMatches
         
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -142,7 +153,7 @@ struct ImageSearchResultView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(sortedMatches) { match in
+                    ForEach(displayMatches) { match in
                         FoundItemCardView(match: match) {
                             if let url = URL(string: match.link) {
                                 UIApplication.shared.open(url)
@@ -156,7 +167,7 @@ struct ImageSearchResultView: View {
             }
             if matches.count > 1 {
                 HStack(spacing: 6) {
-                    ForEach(0..<min(sortedMatches.count, 5), id: \.self) { index in
+                    ForEach(0..<min(displayMatches.count, 5), id: \.self) { index in
                         Circle()
                             .fill(Color("All").opacity(index == 0 ? 0.8 : 0.3))
                             .frame(width: 6, height: 6)
@@ -216,38 +227,89 @@ struct ImageSearchResultView: View {
         }
     }
     
-    private func sortMatches(_ matches: [LensMatch], by option: PriceSortOption) -> [LensMatch] {
+    private func sortMatches(_ matches: [LensMatch], by option: PriceSortOption) async -> [LensMatch] {
         guard option != .none else { return matches }
         
-        return matches.sorted { match1, match2 in
-            let price1 = extractPrice(from: match1.priceLabel) ?? 0
-            let price2 = extractPrice(from: match2.priceLabel) ?? 0
-            
+        var matchesWithPrices: [(match: LensMatch, price: Double)] = []
+        
+        for match in matches {
+            let price = await extractPriceInINR(from: match.priceLabel) ?? 0
+            matchesWithPrices.append((match: match, price: price))
+        }
+        
+        matchesWithPrices.sort { item1, item2 in
             switch option {
             case .lowToHigh:
-                return price1 < price2
+                return item1.price < item2.price
             case .highToLow:
-                return price1 > price2
+                return item1.price > item2.price
             case .none:
                 return false
             }
         }
+        
+        return matchesWithPrices.map { $0.match }
     }
     
-    private func extractPrice(from priceLabel: String?) -> Double? {
+    private func extractPriceInINR(from priceLabel: String?) async -> Double? {
         guard let priceLabel = priceLabel else { return nil }
         
-        let cleaned = priceLabel
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: "€", with: "")
-            .replacingOccurrences(of: "£", with: "")
+        guard let (amount, currencyCode) = parsePrice(priceLabel) else {
+            return nil
+        }
+        
+        if currencyCode.uppercased() == "INR" {
+            return amount
+        }
+        
+        return await CurrencyConverter.shared.convertToINR(amount: amount, from: currencyCode)
+    }
+    
+    private func parsePrice(_ priceString: String) -> (amount: Double, currencyCode: String)? {
+        let trimmed = priceString.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let currencyMap: [String: String] = [
+            "$": "USD",
+            "€": "EUR",
+            "£": "GBP",
+            "¥": "JPY",
+            "₹": "INR",
+            "A$": "AUD",
+            "C$": "CAD",
+            "CHF": "CHF",
+            "CN¥": "CNY",
+            "HK$": "HKD",
+            "NZ$": "NZD",
+            "SEK": "SEK",
+            "NOK": "NOK",
+            "DKK": "DKK",
+            "PLN": "PLN",
+            "R$": "BRL",
+            "ZAR": "ZAR",
+            "MXN": "MXN"
+        ]
+        
+        var currencyCode = "USD"
+        var cleaned = trimmed
+        
+        for (symbol, code) in currencyMap.sorted(by: { $0.key.count > $1.key.count }) {
+            if trimmed.uppercased().contains(symbol.uppercased()) {
+                currencyCode = code
+                cleaned = cleaned.replacingOccurrences(of: symbol, with: "", options: .caseInsensitive)
+                break
+            }
+        }
+        
+        cleaned = cleaned
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: " ", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.").inverted)
         
-
-        let numberFormatter = NumberFormatter()
-        numberFormatter.numberStyle = .decimal
-        return numberFormatter.number(from: cleaned)?.doubleValue
+        guard let amount = Double(cleaned) else {
+            return nil
+        }
+        
+        return (amount, currencyCode)
     }
 }
 

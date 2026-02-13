@@ -128,7 +128,6 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
     private var shutterInnerView: UIView? { shutterButton?.subviews.first }
 
     private func setupOverlay() {
-        //top nav\
         let navHeight: CGFloat = 56
         navBar = UIView()
         navBar.backgroundColor = traitCollection.userInterfaceStyle == .dark ? .black : .systemBackground
@@ -150,8 +149,6 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
             titleLabel.centerXAnchor.constraint(equalTo: navBar.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: navBar.centerYAnchor),
         ])
-
-        // liquid gass awooga
         
         let glassView = CameraGlassOverlayView(onBack: { [weak self] in self?.onCancel?() }, bottomPanelHeight: 158)
         let hosting = UIHostingController(rootView: glassView)
@@ -167,7 +164,6 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
         ])
         hosting.didMove(toParent: self)
 
-        // bottom panel
         bottomPanel = UIView()
         bottomPanel.backgroundColor = traitCollection.userInterfaceStyle == .dark ? .black : .systemBackground
         bottomPanel.layer.cornerRadius = 24
@@ -262,7 +258,6 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
             flashButton.heightAnchor.constraint(equalToConstant: 44),
         ])
     }
-        //permission chcek
 
     private func checkPermissionAndSetupCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {

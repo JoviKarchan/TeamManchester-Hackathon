@@ -60,7 +60,6 @@ struct HistoryView: View {
             Color("Background").ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Title (centered)
                 Text("History")
                     .font(.system(size: 20, weight: .semibold))
                     .padding(.top, 36)
@@ -308,9 +307,7 @@ private extension HistoryView {
         if !today.isEmpty { result.append(.init(title: "Today", items: today)) }
         if !yesterday.isEmpty { result.append(.init(title: "Yesterday", items: yesterday)) }
 
-    
         let sortedMonths = monthBuckets.keys.sorted { a, b in
-            // parse month titles back into dates for ordering
             let fmt = DateFormatter()
             fmt.locale = Locale(identifier: "en_US_POSIX")
             fmt.dateFormat = "MMMM yyyy"
