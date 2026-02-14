@@ -8,6 +8,7 @@ struct LensMatch: Identifiable, Equatable {
     let source: String
     let thumbnail: String?
     let priceLabel: String?
+    var trustScore: Int? = nil
 }
 
 
@@ -37,4 +38,16 @@ struct LensMatchPayload: Decodable {
             priceLabel: price?.value
         )
     }
+}
+
+struct GoogleShoppingResponse: Codable {
+    let shopping_results: [ShoppingResult]?
+}
+
+struct ShoppingResult: Codable {
+    let title: String?
+    let link: String?
+    let source: String?
+    let price: String?
+    let thumbnail: String?
 }

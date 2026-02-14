@@ -38,6 +38,15 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
 
     private let sessionQueue = DispatchQueue(label: "camera.session")
 
+    /// Prevents multiple captures and avoids broken state when session isn't ready or was interrupted.
+    private var isCapturing = false
+
+    /// When true, session is being or has been torn down; delegate and UI must not touch session/callbacks.
+    private var isTornDown = false
+
+    private var sessionInterruptedObserver: NSObjectProtocol?
+    private var sessionInterruptionEndedObserver: NSObjectProtocol?
+
     private let previewView = UIView()
 
     
@@ -81,22 +90,31 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         updateOverlayColors()
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            if self.captureSession?.isRunning == false {
-                self.captureSession?.startRunning()
+        addSessionInterruptionObservers()
+        if captureSession == nil {
+            isTornDown = false
+            // Brief delay so camera daemon can release device (reduces Fig -17281 / freeze)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.checkPermissionAndSetupCamera()
+            }
+        } else {
+            sessionQueue.async { [weak self] in
+                guard let self else { return }
+                if self.captureSession?.isRunning == false {
+                    self.captureSession?.startRunning()
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.setShutterEnabledIfReady()
+                }
             }
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            if self.captureSession?.isRunning == true {
-                self.captureSession?.stopRunning()
-            }
-        }
+        isTornDown = true
+        removeSessionInterruptionObservers()
+        tearDownCaptureSession()
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -195,6 +213,7 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
         shutterButton.layer.borderColor = UIColor.white.cgColor
         shutterButton.translatesAutoresizingMaskIntoConstraints = false
         shutterButton.isUserInteractionEnabled = true
+        shutterButton.isEnabled = false // enabled only when session is ready (avoids silent no-op taps)
         shutterButton.addTarget(self, action: #selector(shutterTapped), for: .touchUpInside)
         bottomPanel.addSubview(shutterButton)
 
@@ -294,6 +313,7 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
     private func setupCaptureSession() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            guard !self.isTornDown else { return }
 
             let session = AVCaptureSession()
             session.sessionPreset = .photo
@@ -330,6 +350,82 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
             }
 
             session.startRunning()
+            DispatchQueue.main.async { [weak self] in
+                self?.setShutterEnabledIfReady()
+            }
+        }
+    }
+
+    /// Call on main only. Enables shutter only when session is running and we're not already capturing.
+    private func setShutterEnabledIfReady() {
+        let ready = photoOutput != nil && (captureSession?.isRunning == true) && !isCapturing
+        shutterButton?.isEnabled = ready
+        shutterButton?.alpha = ready ? 1.0 : 0.5
+    }
+
+    private func addSessionInterruptionObservers() {
+        sessionInterruptedObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, note.object as? AVCaptureSession === self.captureSession else { return }
+            self.setShutterEnabledIfReady()
+        }
+        sessionInterruptionEndedObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.interruptionEndedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self, note.object as? AVCaptureSession === self.captureSession else { return }
+            self.sessionQueue.async { [weak self] in
+                guard let self, self.captureSession?.isRunning == false else { return }
+                self.captureSession?.startRunning()
+                DispatchQueue.main.async { self.setShutterEnabledIfReady() }
+            }
+        }
+    }
+
+    private func removeSessionInterruptionObservers() {
+        if let o = sessionInterruptedObserver {
+            NotificationCenter.default.removeObserver(o)
+            sessionInterruptedObserver = nil
+        }
+        if let o = sessionInterruptionEndedObserver {
+            NotificationCenter.default.removeObserver(o)
+            sessionInterruptionEndedObserver = nil
+        }
+    }
+
+    /// Fully tears down the capture session so the camera device is released. Prevents "device in use"
+    /// and Fig/capture daemon errors (-17281) when the camera is shown again.
+    private func tearDownCaptureSession() {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard let session = self.captureSession else {
+                DispatchQueue.main.async { [weak self] in self?.setShutterEnabledIfReady() }
+                return
+            }
+            if session.isRunning {
+                session.stopRunning()
+            }
+            session.beginConfiguration()
+            for input in session.inputs {
+                session.removeInput(input)
+            }
+            for output in session.outputs {
+                session.removeOutput(output)
+            }
+            session.commitConfiguration()
+            self.captureSession = nil
+            self.photoOutput = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.previewLayer?.session = nil
+                self.previewLayer?.removeFromSuperlayer()
+                self.previewLayer = nil
+                self.setShutterEnabledIfReady()
+            }
         }
     }
 
@@ -372,9 +468,13 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
 
 
     @objc private func shutterTapped() {
-        guard let photoOutput else { return }
-        let settings = AVCapturePhotoSettings()
+        guard let photoOutput,
+              captureSession?.isRunning == true,
+              !isCapturing else { return }
+        isCapturing = true
+        setShutterEnabledIfReady()
 
+        let settings = AVCapturePhotoSettings()
         let hasFlash = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentCameraPosition)?.hasFlash ?? false
         settings.flashMode = hasFlash ? flashMode : .off
 
@@ -427,11 +527,17 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
 
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isTornDown else { return }
+            self.isCapturing = false
+            self.setShutterEnabledIfReady()
+        }
         if let error {
             DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTornDown else { return }
                 let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
-                self?.present(alert, animated: true)
+                self.present(alert, animated: true)
             }
             return
         }
@@ -442,7 +548,8 @@ final class CustomCameraViewController: UIViewController, AVCapturePhotoCaptureD
         let finalImage = (currentCameraPosition == .front) ? mirrorImage(image) : image
 
         DispatchQueue.main.async { [weak self] in
-            self?.onCapture?(finalImage)
+            guard let self, !self.isTornDown else { return }
+            self.onCapture?(finalImage)
         }
     }
 

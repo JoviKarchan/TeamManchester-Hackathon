@@ -27,8 +27,8 @@ class AuthManager: ObservableObject {
         isLoading = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             let user = User(
-                name: "Eugenia Babajanyan",
-                email: "eugenia.bj@gmail.com",
+                name: "Jovi Kaarchan",
+                email: "jovi.udayakumarbabu@icloud.com",
                 profileImageURL: nil
             )
             self.currentUser = user

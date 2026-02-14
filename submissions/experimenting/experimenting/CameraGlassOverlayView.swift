@@ -7,27 +7,25 @@ struct CameraGlassOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Full-screen clear layer that does NOT capture touches (so shutter/flip/flash work)
             Color.clear
                 .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 0) {
-                    backButton
-                        .padding(.leading, 16)
-                        .padding(.top, 8)
-                    Spacer(minLength: 0)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Only the back button receives touches (fixed 44×44); hint is non-interactive so shutter works
+            backButton
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .padding(.leading, 16)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            VStack {
-                Spacer()
-                hintView
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, bottomPanelHeight)
-            }
+            hintView
+                .allowsHitTesting(false)
+                .padding(.horizontal, 24)
+                .padding(.bottom, bottomPanelHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
         .background(Color.clear)
     }

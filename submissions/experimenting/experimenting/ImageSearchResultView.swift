@@ -35,6 +35,7 @@ struct ImageSearchResultView: View {
     var onDismiss: (() -> Void)?
     
     @State private var priceSortOption: PriceSortOption = .none
+    @State private var minTrustScore: Int? = nil
     @State private var sortedMatches: [LensMatch] = []
 
     var body: some View {
@@ -64,12 +65,17 @@ struct ImageSearchResultView: View {
                 .ignoresSafeArea(edges: .top)
                 .onAppear {
                     Task {
-                        sortedMatches = await sortMatches(matches, by: priceSortOption)
+                        sortedMatches = await filterAndSortMatches(matches, priceOption: priceSortOption, minTrustScore: minTrustScore)
                     }
                 }
                 .onChange(of: priceSortOption) { newOption in
                     Task {
-                        sortedMatches = await sortMatches(matches, by: newOption)
+                        sortedMatches = await filterAndSortMatches(matches, priceOption: newOption, minTrustScore: minTrustScore)
+                    }
+                }
+                .onChange(of: minTrustScore) { newScore in
+                    Task {
+                        sortedMatches = await filterAndSortMatches(matches, priceOption: priceSortOption, minTrustScore: newScore)
                     }
                 }
             }
@@ -145,7 +151,10 @@ struct ImageSearchResultView: View {
                 Spacer()
                 
                 if matches.count > 1 {
-                    priceFilterMenu
+                    HStack(spacing: 8) {
+                        priceFilterMenu
+                        trustScoreFilterMenu
+                    }
                 }
             }
             .padding(.horizontal, 24)
@@ -182,49 +191,143 @@ struct ImageSearchResultView: View {
     }
     
     private var priceFilterMenu: some View {
-        HStack(spacing: 8) {
+        Menu {
+            ForEach(PriceSortOption.allCases, id: \.rawValue) { option in
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        priceSortOption = option
+                    }
+                } label: {
+                    HStack {
+                        Text("\(option.emoji) \(option.displayName)")
+                        if priceSortOption == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(priceSortOption.emoji)
+                    .font(.system(size: 16))
+                Text(priceSortOption.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(priceSortOption == .none ? Color("All") : .white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(priceSortOption == .none ? Color("CardColor") : Color.blue)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var trustScoreFilterMenu: some View {
+        Menu {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) {
-                    priceSortOption = priceSortOption == .lowToHigh ? .none : .lowToHigh
+                    minTrustScore = nil
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Text("💰")
-                        .font(.system(size: 16))
-                    Text("Low")
-                        .font(.system(size: 14, weight: .semibold))
+                HStack {
+                    Text("All")
+                    if minTrustScore == nil {
+                        Image(systemName: "checkmark")
+                    }
                 }
-                .foregroundColor(priceSortOption == .lowToHigh ? .white : Color("All"))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(priceSortOption == .lowToHigh ? Color.blue : Color("CardColor"))
-                )
             }
-            .buttonStyle(.plain)
             
             Button {
                 withAnimation(.easeOut(duration: 0.2)) {
-                    priceSortOption = priceSortOption == .highToLow ? .none : .highToLow
+                    minTrustScore = 70
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Text("💎")
-                        .font(.system(size: 16))
-                    Text("High")
-                        .font(.system(size: 14, weight: .semibold))
+                HStack {
+                    Text("70+")
+                    if minTrustScore == 70 {
+                        Image(systemName: "checkmark")
+                    }
                 }
-                .foregroundColor(priceSortOption == .highToLow ? .white : Color("All"))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(priceSortOption == .highToLow ? Color.blue : Color("CardColor"))
-                )
             }
-            .buttonStyle(.plain)
+            
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    minTrustScore = 80
+                }
+            } label: {
+                HStack {
+                    Text("80+")
+                    if minTrustScore == 80 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    minTrustScore = 90
+                }
+            } label: {
+                HStack {
+                    Text("90+")
+                    if minTrustScore == 90 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "shield.checkered")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(minTrustScore != nil ? "\(minTrustScore!)+" : "Trust")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundColor(minTrustScore != nil ? .white : Color("All"))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(minTrustScore != nil ? Color.gray : Color("CardColor"))
+            )
         }
+    }
+    
+    private func filterAndSortMatches(_ matches: [LensMatch], priceOption: PriceSortOption, minTrustScore: Int?) async -> [LensMatch] {
+        // First filter by trust score
+        var filtered = matches
+        if let minScore = minTrustScore {
+            filtered = matches.filter { match in
+                guard let score = match.trustScore else { return false }
+                return score >= minScore
+            }
+        }
+        
+        // Then sort by price if needed
+        guard priceOption != .none else { return filtered }
+        
+        var matchesWithPrices: [(match: LensMatch, price: Double)] = []
+        
+        for match in filtered {
+            let price = await extractPriceInINR(from: match.priceLabel) ?? 0
+            matchesWithPrices.append((match: match, price: price))
+        }
+        
+        matchesWithPrices.sort { item1, item2 in
+            switch priceOption {
+            case .lowToHigh:
+                return item1.price < item2.price
+            case .highToLow:
+                return item1.price > item2.price
+            case .none:
+                return false
+            }
+        }
+        
+        return matchesWithPrices.map { $0.match }
     }
     
     private func sortMatches(_ matches: [LensMatch], by option: PriceSortOption) async -> [LensMatch] {

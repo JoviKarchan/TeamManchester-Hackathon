@@ -153,8 +153,25 @@ struct HomeView: View {
                     if matchesWithPrices.isEmpty {
                         searchState = .noMatch
                     } else {
+                        // Show matches immediately, then fetch trust scores
                         searchState = .found(matchesWithPrices)
                         searchMatches = matchesWithPrices
+                        
+                        // Fetch trust scores for all matches with prices
+                        Task {
+                            var matchesWithTrustScores: [LensMatch] = []
+                            for match in matchesWithPrices {
+                                var updatedMatch = match
+                                if let trustScore = try? await TrustScoreClient.getTrustScore(from: match.link) {
+                                    updatedMatch.trustScore = trustScore
+                                }
+                                matchesWithTrustScores.append(updatedMatch)
+                            }
+                            await MainActor.run {
+                                searchState = .found(matchesWithTrustScores)
+                                searchMatches = matchesWithTrustScores
+                            }
+                        }
                     }
                 }
             } catch {

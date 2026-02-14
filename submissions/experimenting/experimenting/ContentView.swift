@@ -13,6 +13,13 @@ struct ContentView: View {
                 }
                 .tag(0)
 
+            ExploreView()
+                .tabItem {
+                    Image(systemName: "sparkles")
+                    Text("Explore")
+                }
+                .tag(1)
+
             HistoryView()
                 .tabItem {
                     Image(systemName: "clock.fill")

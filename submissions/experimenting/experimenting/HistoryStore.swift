@@ -20,6 +20,7 @@ final class HistoryStore: ObservableObject {
         }
         save()
     }
+  
 
     func remove(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
